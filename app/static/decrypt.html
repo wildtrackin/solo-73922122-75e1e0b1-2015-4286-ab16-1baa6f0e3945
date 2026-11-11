@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>日志解密下载 · AES-256-GCM</title>
+<style>
+:root{
+  --bg:#f2f5f8; --card:#ffffff; --ink:#1c2530; --muted:#5b6b7b; --line:#d9e0e7;
+  --ok:#157347; --okbg:#eaf6ef; --okline:#bfe6cf;
+  --bad:#b02a37; --badbg:#fdeeee; --badline:#f2c4c9;
+  --accent:#0b5ed7; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink)}
+header{background:#16283c;color:#fff;padding:16px 24px}
+header h1{margin:0;font-size:19px}
+header p{margin:4px 0 0;color:#9fb4c8;font-size:12.5px}
+header nav{margin-top:8px;font-size:13px}
+header nav a{color:#9fc2ec;text-decoration:none}
+header nav a:hover{text-decoration:underline}
+main{max-width:920px;margin:0 auto;padding:18px 16px 40px}
+details.help{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:13.5px}
+details.help summary{cursor:pointer;font-weight:600}
+details.help table{border-collapse:collapse;margin:8px 0}
+details.help td,details.help th{border:1px solid var(--line);padding:4px 12px;font-size:12.5px;text-align:left}
+details.help th{background:#f0f3f7}
+pre{background:#f6f8fa;border:1px solid var(--line);border-radius:6px;padding:10px;overflow:auto;font-size:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:0 0 16px}
+.card h2{margin:0 0 10px;font-size:15px}
+.field{margin:10px 0}
+.field label{display:block;font-size:13px;font-weight:600;margin-bottom:4px}
+.field .hint{font-weight:400;color:var(--muted);font-size:12px;margin-left:6px}
+input[type=text]{width:100%;font-family:var(--mono);font-size:13px;border:1px solid var(--line);border-radius:6px;padding:8px 10px;background:#fbfcfe;color:var(--ink)}
+input[type=text].invalid{border-color:var(--bad);background:#fff7f7}
+input[type=file]{font-size:13px}
+button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:9px 18px;font-size:14px;cursor:pointer;color:var(--ink)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button:hover{filter:brightness(.94)}
+button:disabled{opacity:.55;cursor:default}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.kv{display:grid;grid-template-columns:88px 1fr auto;gap:6px 10px;align-items:center;font-size:13px;margin:8px 0}
+.kv .k{color:var(--muted)}
+.kv .v{font-family:var(--mono);font-size:12.5px;word-break:break-all}
+.kv button{padding:3px 10px;font-size:12px}
+.samples{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+.samples a{display:inline-block;border:1px solid var(--line);border-radius:6px;padding:7px 14px;font-size:13px;text-decoration:none;color:var(--ink);background:#fbfcfe}
+.samples a:hover{filter:brightness(.95)}
+.msg{border-radius:6px;padding:10px 14px;margin-top:14px;font-size:13.5px;display:none}
+.msg.ok{display:block;background:var(--okbg);color:var(--ok);border:1px solid var(--okline)}
+.msg.bad{display:block;background:var(--badbg);color:#7a1c25;border:1px solid var(--badline)}
+footer{color:var(--muted);font-size:12px;text-align:center;padding:16px}
+</style>
+</head>
+<body>
+<header>
+  <h1>日志解密下载</h1>
+  <p>现场采集器导出的 AES-256-GCM 加密日志 · 完整认证通过后才输出明文 · 服务端全程流式处理，内存不随文件大小增长</p>
+  <nav><a href="/">← 返回防火墙变更检查</a></nav>
+</header>
+<main>
+  <details class="help">
+    <summary>参数与安全说明（点击展开）</summary>
+    <table>
+      <tr><th>项目</th><th>约定</th></tr>
+      <tr><td>算法</td><td>AES-256-GCM（cryptography 库），AAD 固定为空</td></tr>
+      <tr><td>密文</td><td>原始密文（不含 tag），最大 128 MiB（134217728 字节）</td></tr>
+      <tr><td>nonce</td><td>12 字节，十六进制 24 个字符</td></tr>
+      <tr><td>tag</td><td>16 字节，十六进制 32 个字符</td></tr>
+      <tr><td>密钥</td><td>服务端启动时从配置的 32 字节密钥文件读取，页面与接口均不接触密钥</td></tr>
+    </table>
+    <p><b>安全性质：</b>上传、认证、下载三阶段均按固定大小分块流式处理，服务端内存占用与文件大小无关；
+    密文仅在每请求独立的临时文件中暂存（处理结束即删除，断连亦然）；
+    <b>明文不写入任何文件、数据库或日志</b>；篡改、截断或超限的输入一律不输出明文。</p>
+    <p><b>大文件建议用命令行</b>（浏览器内下载会在客户端内存中缓冲）：</p>
+    <pre>curl -fS -o decrypted.log \
+  -F "file=@ciphertext.bin" \
+  -F "nonce=00112233445566778899aabb" \
+  -F "tag=0123456789abcdef0123456789abcdef" \
+  http://localhost:8000/api/decrypt</pre>
+  </details>
+
+  <div class="card">
+    <h2>① 演示样例（可直接下载体验）</h2>
+    <div class="kv">
+      <span class="k">nonce</span><span class="v" id="sampleNonce">加载中…</span>
+      <button type="button" data-copy="sampleNonce">复制</button>
+      <span class="k">tag</span><span class="v" id="sampleTag">加载中…</span>
+      <button type="button" data-copy="sampleTag">复制</button>
+    </div>
+    <div class="samples">
+      <a href="/api/decrypt/samples/good" download>正常样例 sample-good.bin</a>
+      <a href="/api/decrypt/samples/tampered" download>篡改样例 sample-tampered.bin</a>
+      <a href="/api/decrypt/samples/truncated" download>截断样例 sample-truncated.bin</a>
+    </div>
+    <div class="toolbar">
+      <button type="button" id="btnFill">填入样例 nonce / tag</button>
+      <span style="color:var(--muted);font-size:12.5px">三份样例共用同一 nonce/tag：正常样例可解密出演示日志；篡改与截断样例必须认证失败，且不输出任何明文。</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>② 上传密文并解密</h2>
+    <form id="decForm">
+      <div class="field">
+        <label>密文文件<span class="hint">原始密文（不含 tag），≤ 128 MiB</span></label>
+        <input type="file" id="fileInput">
+      </div>
+      <div class="field">
+        <label>nonce（hex）<span class="hint">12 字节 = 24 个十六进制字符</span></label>
+        <input type="text" id="nonceInput" spellcheck="false" autocomplete="off" placeholder="例如 6f6369676d2d64656d6f3031">
+      </div>
+      <div class="field">
+        <label>tag（hex）<span class="hint">16 字节 = 32 个十六进制字符</span></label>
+        <input type="text" id="tagInput" spellcheck="false" autocomplete="off" placeholder="32 个十六进制字符">
+      </div>
+      <div class="toolbar">
+        <button type="submit" class="primary" id="btnGo">认证并解密下载</button>
+        <span id="busy" style="color:var(--muted);font-size:12.5px"></span>
+      </div>
+    </form>
+    <div class="msg" id="msg"></div>
+  </div>
+</main>
+<footer>完整认证通过前不返回成功状态与明文 · 明文不写入文件 / 数据库 / 日志 · 每请求临时文件独立清理</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const HEX = /^[0-9a-fA-F]+$/;
+let sampleParams = null;
+
+function showMsg(kind, text){
+  const m = $("msg");
+  m.className = "msg " + kind;
+  m.textContent = text;
+}
+function clearMsg(){ const m = $("msg"); m.className = "msg"; m.textContent = ""; }
+
+async function loadSamples(){
+  try {
+    const res = await fetch("/api/decrypt/samples");
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error || "加载失败");
+    sampleParams = j;
+    $("sampleNonce").textContent = j.nonce;
+    $("sampleTag").textContent = j.tag;
+  } catch(e){
+    $("sampleNonce").textContent = "加载失败：" + e.message;
+    $("sampleTag").textContent = "-";
+  }
+}
+loadSamples();
+
+document.querySelectorAll("[data-copy]").forEach(btn => {
+  btn.onclick = () => {
+    const text = $(btn.dataset.copy).textContent.trim();
+    if (navigator.clipboard) navigator.clipboard.writeText(text);
+    btn.textContent = "已复制";
+    setTimeout(() => btn.textContent = "复制", 1200);
+  };
+});
+
+$("btnFill").onclick = () => {
+  if (!sampleParams) return;
+  $("nonceInput").value = sampleParams.nonce;
+  $("tagInput").value = sampleParams.tag;
+  $("nonceInput").classList.remove("invalid");
+  $("tagInput").classList.remove("invalid");
+};
+
+function validHex(id, chars){
+  const el = $(id);
+  const v = el.value.trim();
+  const ok = v.length === chars && HEX.test(v);
+  el.classList.toggle("invalid", !ok);
+  return ok;
+}
+
+$("decForm").onsubmit = async (ev) => {
+  ev.preventDefault();
+  clearMsg();
+  const file = $("fileInput").files[0];
+  if (!file){ showMsg("bad", "请选择密文文件。"); return; }
+  if (file.size > 128 * 1024 * 1024){ showMsg("bad", "文件超过 128 MiB 上限，服务端不会处理。"); return; }
+  const okN = validHex("nonceInput", 24);
+  const okT = validHex("tagInput", 32);
+  if (!okN || !okT){ showMsg("bad", "nonce 需 24 个、tag 需 32 个十六进制字符。"); return; }
+
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("nonce", $("nonceInput").value.trim());
+  fd.append("tag", $("tagInput").value.trim());
+
+  $("btnGo").disabled = true;
+  $("busy").textContent = "上传并认证中…（认证通过后才开始下载明文）";
+  try {
+    const res = await fetch("/api/decrypt", {method: "POST", body: fd});
+    if (!res.ok){
+      let text = "请求失败（HTTP " + res.status + "）";
+      try { const j = await res.json(); if (j.error) text = j.error; } catch(e){}
+      showMsg("bad", text + "。未输出任何明文。");
+      return;
+    }
+    const blob = await res.blob();
+    let name = "decrypted-log.bin";
+    const cd = res.headers.get("Content-Disposition") || "";
+    const m = /filename="([^"]+)"/.exec(cd);
+    if (m) name = m[1];
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    showMsg("ok", "认证通过，明文已作为附件下载（" + blob.size + " 字节）。明文未写入服务器磁盘、数据库或日志。");
+  } catch(e){
+    showMsg("bad", "请求失败：" + e.message);
+  } finally {
+    $("btnGo").disabled = false;
+    $("busy").textContent = "";
+  }
+};
+</script>
+</body>
+</html>

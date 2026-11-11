@@ -4,4 +4,19 @@ services:
     container_name: firewall-diff
     ports:
       - "8000:8000"
+    environment:
+      # 解密密钥：启动时从该文件读取（必须恰好 32 字节），缺失或长度不符拒绝启动
+      GCM_KEY_FILE: /run/secrets/gcm_key
+      # 密文暂存目录：tmpfs 挂载，仅驻留内存，容器删除即消失
+      GCM_UPLOAD_DIR: /tmp/gcm-uploads
+    secrets:
+      - gcm_key
+    tmpfs:
+      # 每请求独立暂存文件的落点；uid/gid 对应镜像内 appuser(10001)
+      - /tmp/gcm-uploads:size=1g,uid=10001,gid=10001,mode=0700
     restart: unless-stopped
+
+secrets:
+  # 演示密钥（仅用于本地演示，生产环境务必替换为独立分发的密钥文件）
+  gcm_key:
+    file: ./demo/gcm-demo-key.bin

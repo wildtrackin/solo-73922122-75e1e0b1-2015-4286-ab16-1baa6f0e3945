@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 
+from .decrypt import router as decrypt_router
 from .example import NEW_EXAMPLE, OLD_EXAMPLE
 from .firewall import (ComplexityError, ValidationError, analyze,
                        validate_rulesets)
@@ -16,10 +17,18 @@ BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(title="防火墙变更上线前检查")
 
+app.include_router(decrypt_router)
+
 
 @app.get("/", include_in_schema=False)
 def index():
     return FileResponse(BASE_DIR / "static" / "index.html")
+
+
+@app.get("/decrypt", include_in_schema=False)
+def decrypt_page():
+    """应急响应日志解密下载页（AES-256-GCM，流式认证后下载）。"""
+    return FileResponse(BASE_DIR / "static" / "decrypt.html")
 
 
 @app.get("/api/example")
